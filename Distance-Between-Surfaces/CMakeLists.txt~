@@ -1,0 +1,13 @@
+cmake_minimum_required(VERSION 2.8)
+
+project(normal2warp)
+
+find_package(ITK REQUIRED)
+include(${ITK_USE_FILE})
+
+find_package(VTK REQUIRED)
+include(${VTK_USE_FILE})
+
+add_executable(normal2warp normal2warp.cxx)
+
+target_link_libraries(normal2warp ${ITK_LIBRARIES} ${VTK_LIBRARIES})

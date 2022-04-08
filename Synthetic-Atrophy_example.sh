@@ -54,71 +54,6 @@ function highRes_crop(){
 }
 
 
-# Get the high resolution cropped data
-function Get-HighRes-Mask(){
-    SUBJECT=$1
-    label=$2
-    RAW_DIR=$DATA_ROOT/Raw/$PROJECT_NAME/$SUBJECT/Extras
-    WDIR=$DATA_ROOT/Processed/$PROJECT_NAME/$SUBJECT/$label
-    MASK_DIR=$DATA_ROOT/Processed/$PROJECT_NAME/$SUBJECT/$label/HighRes-Mask
-    ROI_DIR=$DATA_ROOT/Processed/$PROJECT_NAME/$SUBJECT/$label/ROI
-    mkdir -p $MASK_DIR $ROI_DIR
-
-    crop_region_info_file=$MASK_DIR/crop_region_info.txt
-    if [ -f $crop_region_info_file ] ; then
-	rm $crop_region_info_file
-    fi
-    
-    aparc_aseg=$RAW_DIR/aparc+aseg_native.nii.gz
-    label_mask=$ROI_DIR/label_original.nii.gz
-    c3d $aparc_aseg -threshold $label $label 1 0 -holefill 1 0 -o $label_mask
-    
-    brain_mask=$RAW_DIR/skullstrip_mask.nii.gz
-    brain_std=$RAW_DIR/brain_std.nii.gz
-    
-    total_mask=$MASK_DIR/total_mask.nii.gz
-    $getBlurMask $label_mask $brain_std $brain_mask $total_mask 0.1
-    trim_info=$($getTrimRegion $total_mask 4)
-    echo $trim_info >> $crop_region_info_file
-    
-    total_mask_trim=$MASK_DIR/total_mask_trim.nii.gz
-    total_mask_trim_highRes=$MASK_DIR/total_mask_trim_highRes.nii.gz
-    $trimImage $total_mask $total_mask_trim $trim_info
-    ref_info=$(c3d $total_mask_trim -info)
-    x=$(echo $ref_info | cut -d "[" -f 3 | cut -d " " -f 1)
-    y=$(echo $ref_info | cut -d "[" -f 3 | cut -d " " -f 2)
-    z=$(echo $ref_info | cut -d "[" -f 3 | cut -d " " -f 3 | cut -d "]" -f 1)
-    echo $x $y $z >> $crop_region_info_file
- 
-    c3d -interpolation NearestNeighbor $total_mask_trim -resample 400% -holefill 1 0 -o $total_mask_trim_highRes
-
-    # High res + crop
-    highRes_crop $brain_mask 400 $crop_region_info_file $MASK_DIR/brain_mask
-    highRes_crop $aparc_aseg 400 $crop_region_info_file $MASK_DIR/aparc+aseg_native
-    highRes_crop $label_mask 400 $crop_region_info_file $ROI_DIR/label_original
-    
-    c3d $MASK_DIR/aparc+aseg_native_trim.nii.gz -threshold 1 inf 1 0 -sdt -o $MASK_DIR/brain_std_trim.nii.gz
-    c3d $MASK_DIR/aparc+aseg_native_trim_highRes.nii.gz -threshold 1 inf 1 0 -sdt -o $MASK_DIR/brain_std_trim_highRes.nii.gz    
-
-    hem_id=$(echo $label | cut -b 1)
-    if [ $hem_id == 1 ] ; then
-        wm_val=2
-    elif [ $hem_id == 2 ] ; then
-        wm_val=41
-    fi
-    c3d $MASK_DIR/aparc+aseg_native_trim.nii.gz -threshold $wm_val $wm_val 1 0 -o $MASK_DIR/wm_trim.nii.gz
-    c3d $MASK_DIR/aparc+aseg_native_trim_highRes.nii.gz -threshold $wm_val $wm_val 1 0 -o $MASK_DIR/wm_trim_highRes.nii.gz
-
-    c3d $MASK_DIR/aparc+aseg_native_trim_highRes.nii.gz -threshold 1 inf 1 0 -o $ROI_DIR/label_original_joint_trim_highRes.nii.gz
-    
-    $performErosion $total_mask_trim $MASK_DIR/wm_trim.nii.gz $MASK_DIR/total_mask_eroded_trim.nii.gz $blurKernel 0
-    c3d $MASK_DIR/total_mask_eroded_trim.nii.gz $ROI_DIR/label_original_trim.nii.gz -add -threshold 1 inf 1 0 -o $MASK_DIR/total_mask_eroded_trim.nii.gz
-
-}
-
-
-
-
 
 function Remove-Handles(){
     dir=${1?}
@@ -186,12 +121,16 @@ function Get-Mesh(){
 }
 
 
-function Change-To-Working-Space(){
+function Change-Image-Space(){
     input=$1
     output=$2
+    orientation=$3
+    originX=$4
+    originY=$5
+    originZ=$6
 
-    $slicer --launch OrientScalarVolume --orientation LPI $input $output >> /dev/null
-    $c3d $output -origin-voxel 0x0x0vox -o $output
+    $slicer --launch OrientScalarVolume --orientation ${orientation} $input $output >> /dev/null
+    c3d $output -origin-voxel ${originX}x${originY}x${originZ}vox -o $output
 }
 
 
@@ -213,47 +152,71 @@ function main {
     RESULTS_DIR=$DATA_DIR/Results
     mkdir -p $ROI_DIR $MASK_DIR $TRANSFORM_DIR $SURFACE_DIR $RESULTS_DIR
 
+
     # Provided data
-    T1=$INPUT_DIR/T1.nii.gz
-    FLAIR=$INPUT_DIR/FLAIR.nii.gz
-    parcMap=$INPUT_DIR/inputParcellation.nii.gz
-    ribbon=$INPUT_DIR/corticalRibbon.nii.gz
+    T1_original=$INPUT_DIR/T1-original.nii.gz
+    FLAIR_original=$INPUT_DIR/FLAIR-original.nii.gz
+    parcellation=$INPUT_DIR/inputParcellation.nii.gz
     skullStripMask=$INPUT_DIR/skullStripMask.nii.gz
 
-    # Get remaining inputs from provided data
+
+    # Make filled in WM mask
     wm=$INPUT_DIR/wm.nii.gz
-    WM_lh_mask=$SURFACE_DIR/WM_lh.nii.gz
-    WM_rh_mask=$SURFACE_DIR/WM_rh.nii.gz
-    fullBrain_mask=$DATA_DIR/fullBrainMask.nii.gz
-    GM_lh_mask=$SURFACE_DIR/GM_lh.nii.gz
-    GM_rh_mask=$SURFACE_DIR/GM_rh.nii.gz
-    sdt=$INPUT_DIR/brainSDT.nii.gz
-    
-    if false ; then
-    $c3d $ribbon -as ribbon -thresh 2 2 1 0 -as LWM -o $WM_lh_mask \
-	 -push ribbon -thresh 41 41 1 0 -as RWM -o $WM_rh_mask \
-	 -push LWM -push RWM -add -o $wm \
-	 -push ribbon -thresh 2 3 1 0 -as Lfull -o $GM_lh_mask \
-	 -push ribbon -thresh 41 42 1 0 -as Rfull -o $GM_rh_mask \
-	 -push Lfull -push Rfull -add -as M -o $fullBrain_mask \
-	 -push M -sdt -o $sdt
-    fi
+    labels_wm_lh=( $( awk -F " " '{print $1}' $INPUT_DIR/aparc.DKTatlas+aseg_wmFill_lh.txt ) )
+    labels_wm_rh=( $( awk -F " " '{print $1}' $INPUT_DIR/aparc.DKTatlas+aseg_wmFill_rh.txt ) )
+    WMmask_original_lh=$SURFACE_DIR/WM_lh_0.nii.gz
+    WMmask_original_rh=$SURFACE_DIR/WM_rh_0.nii.gz
 
-    # Convert to working space
-    parcMapLPI=$INPUT_DIR/inputParcellation_LPI.nii.gz
-    skullStripMaskLPI=$INPUT_DIR/skullStripMask_LPI.nii.gz
-    wmLPI=$INPUT_DIR/wm_LPI.nii.gz
-    sdtLPI=$INPUT_DIR/brainSDT_LPI.nii.gz
-    
-    if false ; then
-    Change-To-Working-Space $parcMap $parcMapLPI
-    Change-To-Working-Space $skullStripMask $skullStripMaskLPI
-    Change-To-Working-Space $wm $wmLPI
-    Change-To-Working-Space $sdt $sdtLPI
-    fi
+    m=0
+    c3d_command_wm_lh="c3d $parcellation -as P -thresh 0 0 0 0 -popas M0"
+    for label in ${labels_wm_lh[@]} ; do
+	let n=$m+1
+	c3d_command_wm_lh=$c3d_command_wm_lh" -push P -thresh $label $label $label 0 -push M$m -add -popas M$n"
+	let m=$m+1
+    done
+    c3d_command_wm_lh=$c3d_command_wm_lh" -push M$n -thresh 1 inf 1 0 -holefill 1 0 -o $WMmask_original_lh"
+    $c3d_command_wm_lh
+
+    m=0
+    c3d_command_wm_rh="c3d $parcellation -as P -thresh 0 0 0 0 -popas M0"
+    for label in ${labels_wm_rh[@]} ; do
+	let n=$m+1
+	c3d_command_wm_rh=$c3d_command_wm_rh" -push P -thresh $label $label $label 0 -push M$m -add -popas M$n"
+	let m=$m+1
+    done
+    c3d_command_wm_rh=$c3d_command_wm_rh" -push M$n -thresh 1 inf 1 0 -holefill 1 0 -o $WMmask_original_rh"
+    $c3d_command_wm_rh
+
+    c3d $WMmask_original_lh $WMmask_original_rh -add -o $wm
 
     
+    # Make full brain mask
+    fullBrainMask_lh=$SURFACE_DIR/GM_lh_0.nii.gz
+    fullBrainMask_rh=$SURFACE_DIR/GM_rh_0.nii.gz
+    fullBrainMask=$INPUT_DIR/fullBrainMask.nii.gz
+    fullBrainMask_sdt=$INPUT_DIR/fullBrainMask_sdt.nii.gz
+
+    c3d $WMmask_original_lh $parcellation -as P -thresh 1001 1035 1 0 -add -thresh 1 inf 1 0 -o $fullBrainMask_lh
+    c3d $WMmask_original_rh $parcellation -as P -thresh 2001 2035 1 0 -add -thresh 1 inf 1 0 -o $fullBrainMask_rh
+    c3d $fullBrainMask_lh $fullBrainMask_rh -add -o $fullBrainMask
+    c3d $fullBrainMask -sdt $fullBrainMask_sdt
     
+
+    # Convert all inputs to working space
+    fullBrainMask_LPI=$INPUT_DIR/fullBrainMask_LPI.nii.gz
+    parcellation_LPI=$INPUT_DIR/inputParcellation_LPI.nii.gz
+    skullStripMask_LPI=$INPUT_DIR/skullStripMask_LPI.nii.gz
+    wm_LPI=$INPUT_DIR/wm_LPI.nii.gz
+    fullBrainMask_sdt_LPI=$INPUT_DIR/fullBrainMask_sdt_LPI.nii.gz
+
+    Change-Image-Space $fullBrainMask $fullBrainMask_LPI LPI 0 0 0
+    Change-Image-Space $parcellation $parcellation_LPI LPI 0 0 0
+    Change-Image-Space $skullStripMask $skullStripMask_LPI LPI 0 0 0
+    Change-Image-Space $wm $wm_LPI LPI 0 0 0
+    Change-Image-Space $fullBrainMask_sdt $fullBrainMask_sdt_LPI LPI 0 0 0
+    
+    
+
     ##############################################################
     ##    Get high-resolution images cropped to selected ROI    ##
     ##############################################################
@@ -261,21 +224,22 @@ function main {
     # Get label image
     label=1030 # label for atrophy induction (this is the ROI we used as an example in our publication)
     labelMask_original=$ROI_DIR/label_original.nii.gz
-    if false ; then
-    $c3d $parcMapLPI -threshold $label $label 1 0 -holefill 1 0 -o $labelMask_original
-    fi
+    $c3d $parcellation_LPI -threshold $label $label 1 0 -o $labelMask_original
+
+    
     # Blur mask (mask used for blurring/smoothing the atrophy deformation field)
     blurMask=$MASK_DIR/blurMask.nii.gz
-    if false ; then
-    $getBlurMask $labelMask_original $sdtLPI $skullStripMaskLPI $blurMask 0.1 
-    fi
+    $getBlurMask $labelMask_original $fullBrainMask_sdt_LPI $skullStripMask_LPI $blurMask 0.4
+    
     
     # Get cropping data from blur mask (we are going to crop all the images to the blur mask + a 4 voxel buffer on all sides) 
     crop_region_info_file=$MASK_DIR/crop_region_info.txt
-    trim_info=$($getTrimRegion $blurMask 4)
-    if false ; then
-    echo $trim_info >> $crop_region_info_file
+    if [ -f $crop_region_info_file ] ; then
+	rm $crop_region_info_file
     fi
+    trim_info=$($getTrimRegion $blurMask 4)
+    echo $trim_info >> $crop_region_info_file
+
     blurMask_trim=$MASK_DIR/blurMask_trim.nii.gz
     $trimImage $blurMask $blurMask_trim $trim_info
     ref_info=$($c3d $blurMask_trim -info)
@@ -287,28 +251,26 @@ function main {
 
     # Upsample and crop image data
     blurMask_trim_highRes=$MASK_DIR/blurMask_trim_highRes.nii.gz
-    if false ; then
-    c3d -interpolation NearestNeighbor $blurMask_trim -resample 400% -holefill 1 0 -o $blurMask_trim_highRes
+    resampleFactor=400
 
-    highRes_crop $skullStripMaskLPI 400 $crop_region_info_file $MASK_DIR/skullStripMask
-    highRes_crop $parcMapLPI 400 $crop_region_info_file $MASK_DIR/inputParcellation
-    highRes_crop $labelMask_original 400 $crop_region_info_file $ROI_DIR/label_original
-    highRes_crop $wmLPI 400 $crop_region_info_file $MASK_DIR/wm
-    highRes_crop $sdtLPI 400 $crop_region_info_file $MASK_DIR/sdt
-    fi
-
+    c3d -interpolation NearestNeighbor $blurMask_trim -resample ${resampleFactor}% -holefill 1 0 -o $blurMask_trim_highRes
+    highRes_crop $skullStripMask_LPI $resampleFactor $crop_region_info_file $MASK_DIR/skullStripMask
+    highRes_crop $parcellation_LPI $resampleFactor $crop_region_info_file $MASK_DIR/inputParcellation
+    highRes_crop $labelMask_original $resampleFactor $crop_region_info_file $ROI_DIR/label_original
+    highRes_crop $wm_LPI $resampleFactor $crop_region_info_file $MASK_DIR/wm
+    highRes_crop $fullBrainMask_sdt_LPI $resampleFactor $crop_region_info_file $MASK_DIR/sdt
 
 
-    #########################################
-    ##    Create synthetic atrophy data    ##
-    #########################################
+
+    ###########################################
+    ##    Induce synthetic atrophy in ROI    ##
+    ###########################################
 
     # Perform erosion
     mkdir -p $ROI_DIR/Erosion-Iterations
     labelMask_atrophy=$ROI_DIR/label_atrophy_trim_highRes.nii.gz
     nIterations=4 # number of iterations for erosion via binary morphology operations
 
-    if false ; then
     n=1
     while [ $n -le $nIterations ] ; do
 	if [ $n == 1 ] ; then
@@ -322,10 +284,8 @@ function main {
 	let n=$n+1
     done
     
-
     cp $next $labelMask_atrophy
     #rm $ROI_DIR/Erosion-Iterations
-    fi
 
 
     # Get full brain mask for atrophied timepoint
@@ -335,29 +295,28 @@ function main {
     joint_labelMask_atrophy=$ROI_DIR/label_atrophy_joint_trim_highRes.nii.gz
     let lower_threshold=$label-1
     let upper_threshold=$label+1
-    if false ; then
+
     c3d $MASK_DIR/inputParcellation_trim_highRes.nii.gz -as P -threshold 1 $lower_threshold 1 0 -popas LM \
 	-push P -threshold $upper_threshold inf 1 0 -popas UM \
 	-push LM -push UM -add $labelMask_atrophy -add -o $joint_labelMask_atrophy
-    fi
 
 
+ 
     # Register original --> atrophied
     field_outbase=$TRANSFORM_DIR/field
     field_inverse_outbase=$TRANSFORM_DIR/field_inverse
-    if false ; then
+    
     $greedy -d 3 -m MSQ -i $joint_labelMask_atrophy $joint_labelMask_original -o ${field_outbase}_full_trim_highRes.nii.gz \
 	    -oinv ${field_inverse_outbase}_full_trim_highRes.nii.gz \
 	    -mm $joint_labelMask_original -n 100x100x50x10 >> /dev/null
     $c3d -mcs ${field_outbase}_full_trim_highRes.nii.gz -foreach -resample 25% -origin 0x0x0mm -endfor -omc ${field_outbase}_full_trim.nii.gz
     $c3d -mcs ${field_inverse_outbase}_full_trim_highRes.nii.gz -foreach -resample 25% -origin 0x0x0mm -endfor -omc ${field_inverse_outbase}_full_trim.nii.gz
-    fi
-
+    
+    
     # Mask/blur fields
     pad_info=$(sed -n 1p $crop_region_info_file)
     mkdir -p $TRANSFORM_DIR/Dump
-
-    if false ; then
+    
     c3d $MASK_DIR/sdt_trim.nii.gz -origin 0x0x0mm -o $TRANSFORM_DIR/Dump/brainSDT_trim.nii.gz
     c3d $ROI_DIR/label_original_trim.nii.gz -origin 0x0x0mm -o $TRANSFORM_DIR/Dump/label_original_trim.nii.gz
     c3d $MASK_DIR/skullStripMask_trim.nii.gz -origin 0x0x0mm -o $TRANSFORM_DIR/Dump/skullStripMask_trim.nii.gz
@@ -374,8 +333,7 @@ function main {
         c3d -mcs ${field_inverse_outbase}_maskBlur_pad.nii.gz -foreach -origin 0x0x0vox -endfor -omc ${field_inverse_outbase}_maskBlur_pad.nii.gz
 
     rm -r $TRANSFORM_DIR/Dump
-    fi
-
+    
     
     
     #################################
@@ -383,56 +341,37 @@ function main {
     #################################
     
     # Apply warp to T1 image
-    cp $T1 $RESULTS_DIR/T1.nii.gz
-    T1_atrophy=$RESULTS_DIR/T1_atrophy.nii.gz
-
-    if false ; then
-    $greedy -d 3 -rf $T1 -rm $T1 $T1_atrophy -r ${field_outbase}_maskBlur_pad.nii.gz
-    fi
+    T1_atrophy=$RESULTS_DIR/T1-atrophy.nii.gz
+    FLAIR_atrophy=$RESULTS_DIR/FLAIR-atrophy.nii.gz
     
+    $greedy -d 3 -rf $T1_original -rm $T1_original $T1_atrophy -r ${field_outbase}_maskBlur_pad.nii.gz
+    $greedy -d 3 -rf $T1_original -rm $FLAIR_original $FLAIR_atrophy -r ${field_outbase}_maskBlur_pad.nii.gz
 
-    # Register FLAIR to T1 image
-    FLAIR_T1space=$RESULTS_DIR/FLAIR_T1space.nii.gz
-    FLAIR_atrophy=$RESULTS_DIR/FLAIR_T1space_atrophy.nii.gz
-    moments=$DATA_DIR/FLAIR-Registration/moments.mat
-    rigid=$DATA_DIR/FLAIR-Registration/rigid.mat
-    mkdir -p $DATA_DIR/FLAIR-Registration
 
-    if false ; then
-    $greedy -d 3 -i $T1 $FLAIR -o $moments -moments 1 >> /dev/null
-    $greedy -d 3 -i $T1 $FLAIR -o $rigid -a -dof 6 -n 100x50x10 -m 4x4x4 -ia $moments >> /dev/null
-    $greedy -d 3 -r $rigid -rf $T1 -rm $FLAIR $FLAIR_T1space >> /dev/null
-    $greedy -d 3 -rf $T1 -rm $FLAIR_T1space $FLAIR_atrophy -r ${field_outbase}_maskBlur_pad.nii.gz
-
-    fi
-    
-    #rm -r $$DATA_DIR/FLAIR-Registration
-
-    
 
     ####################################
     ##    Measure thickness change    ##
     ####################################
 
     # Make label map for ROI
-    fullBrainMask_parc=$DATA_DIR/parcellation_ROI.nii.gz
-    if false ; then
-    c3d $fullBrain_mask $labelMask_original -as ROI -scale -1 -add -popas M \
-	-push ROI -dilate 1 4x4x4vox -push M -times -push M -add -push ROI -scale 3 -add -o $fullBrainMask_parc
-    fi
+    labelMask_original_dataSpace=$ROI_DIR/label_original_dataSpace.nii.gz
+    Change-Image-Space $labelMask_original $labelMask_original_dataSpace LAI 0 0 0
     
+    fullBrainMask_parc=$DATA_DIR/parcellation_ROI.nii.gz
+    c3d $fullBrainMask $labelMask_original_dataSpace -as ROI -scale -1 -add -popas M \
+	-push ROI -dilate 1 4x4x4vox -push M -times -push M -add -push ROI -scale 3 -add -o $fullBrainMask_parc
+    
+ 
     # Get meshes of original (unatrophied) data
     WM_lh_mesh=$SURFACE_DIR/WM_lh.vtp
     WM_rh_mesh=$SURFACE_DIR/WM_rh.vtp
     GM_lh_mesh=$SURFACE_DIR/GM_lh.vtp
     GM_rh_mesh=$SURFACE_DIR/GM_rh.vtp
 
-    if false ; then
-	Get-Mesh $WM_lh_mask $WM_lh_mesh $SURFACE_DIR
-	Get-Mesh $WM_rh_mask $WM_rh_mesh $SURFACE_DIR
-	Get-Mesh $GM_lh_mask $GM_lh_mesh $SURFACE_DIR
-	Get-Mesh $GM_rh_mask $GM_rh_mesh $SURFACE_DIR
-    fi
+    Get-Mesh $WMmask_original_lh $WM_lh_mesh $SURFACE_DIR
+    Get-Mesh $WMmask_original_rh $WM_rh_mesh $SURFACE_DIR
+    Get-Mesh $fullBrainMask_lh $GM_lh_mesh $SURFACE_DIR
+    Get-Mesh $fullBrainMask_lh $GM_rh_mesh $SURFACE_DIR
 
     
     # Parcellate meshes
@@ -446,10 +385,8 @@ function main {
     GM_lh_mesh_parc=$RESULTS_DIR/GM_lh_atrophyLabelParcellation.txt
     GM_rh_mesh_parc=$RESULTS_DIR/GM_rh_atrophyLabelParcellation.txt
 
-    if false ; then
     $parcellateAtrophyRegion $WM_lh_mesh $GM_lh_mesh $fullBrainMask_parc $WM_lh_mesh_original $GM_lh_mesh_original 0
     $parcellateAtrophyRegion $WM_rh_mesh $GM_rh_mesh $fullBrainMask_parc $WM_rh_mesh_original $GM_rh_mesh_original 0
-    fi
 
     
     # Apply warp to surfaces
@@ -458,12 +395,10 @@ function main {
     GM_lh_mesh_atrophy=$SURFACE_DIR/GM_lh_atrophy.vtp
     GM_rh_mesh_atrophy=$SURFACE_DIR/GM_rh_atrophy.vtp
 
-    if false ; then
     $warpSurfaces $WM_lh_mesh_original ${field_inverse_outbase}_maskBlur_pad.nii.gz $MASK_DIR/blurMask.nii.gz $WM_lh_mesh_atrophy 0 1
     $warpSurfaces $WM_rh_mesh_original ${field_inverse_outbase}_maskBlur_pad.nii.gz $MASK_DIR/blurMask.nii.gz $WM_rh_mesh_atrophy 0 1
     $warpSurfaces $GM_lh_mesh_original ${field_inverse_outbase}_maskBlur_pad.nii.gz $MASK_DIR/blurMask.nii.gz $GM_lh_mesh_atrophy 0 0
     $warpSurfaces $GM_rh_mesh_original ${field_inverse_outbase}_maskBlur_pad.nii.gz $MASK_DIR/blurMask.nii.gz $GM_rh_mesh_atrophy 0 0
-    fi
 
 
     # Get distance between surfaces
@@ -485,8 +420,6 @@ function main {
     $distanceBetweenSurfaces $GM_lh_mesh_atrophy $GM_lh_mesh_original $GM_lh_mesh_atrophy_surfaceDistance
     $distanceBetweenSurfaces $GM_rh_mesh_original $GM_rh_mesh_atrophy $GM_rh_mesh_original_surfaceDistance
     $distanceBetweenSurfaces $GM_rh_mesh_atrophy $GM_rh_mesh_original $GM_rh_mesh_atrophy_surfaceDistance
-
-    
     
 
     # Write everything out into a text file
@@ -502,11 +435,11 @@ function main {
     
     WM_lh_mesh_original_surfaceDistance_txt=$RESULTS_DIR/WM_lh_surfaceDistance_original2atrophy.txt
     WM_rh_mesh_original_surfaceDistance_txt=$RESULTS_DIR/WM_rh_surfaceDistance_original2atrophy.txt
-    WM_rh_mesh_atrophy_surfaceDistance_txt=$RESULTS_DIR/WM_lh_surfaceDistance_atrophy2original.txt
+    WM_lh_mesh_atrophy_surfaceDistance_txt=$RESULTS_DIR/WM_lh_surfaceDistance_atrophy2original.txt
     WM_rh_mesh_atrophy_surfaceDistance_txt=$RESULTS_DIR/WM_rh_surfaceDistance_atrophy2original.txt
     GM_lh_mesh_original_surfaceDistance_txt=$RESULTS_DIR/GM_lh_surfaceDistance_original2atrophy.txt
     GM_rh_mesh_original_surfaceDistance_txt=$RESULTS_DIR/GM_rh_surfaceDistance_original2atrophy.txt
-    GM_rh_mesh_atrophy_surfaceDistance_txt=$RESULTS_DIR/GM_lh_surfaceDistance_atrophy2original.txt
+    GM_lh_mesh_atrophy_surfaceDistance_txt=$RESULTS_DIR/GM_lh_surfaceDistance_atrophy2original.txt
     GM_rh_mesh_atrophy_surfaceDistance_txt=$RESULTS_DIR/GM_rh_surfaceDistance_atrophy2original.txt
 
     $readMeshArray $WM_lh_mesh_original_surfaceDistance $WM_lh_mesh_original_surfaceDistance_txt "Surface-Distance"

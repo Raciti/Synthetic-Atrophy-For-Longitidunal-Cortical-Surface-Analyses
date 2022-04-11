@@ -2,7 +2,7 @@
 
 set -x
 
-ROOT=/home/larsonke # this is where you cloned the git repository into
+ROOT= # this is where you cloned the git repository into
 WDIR=$ROOT/Code/Synthetic-Atrophy-For-Longtidunal-Cortical-Surface-Analyses
 mkdir -p $WDIR
 

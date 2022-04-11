@@ -7,11 +7,11 @@ WDIR=$ROOT/Code/Synthetic-Atrophy-For-Longtidunal-Cortical-Surface-Analyses
 mkdir -p $WDIR
 
 # External tools you will need to run this example:
-c3d=$ROOT/bin/c3d # (https://sourceforge.net/p/c3d/git/ci/master/tree/)
-slicer=$ROOT/Libraries/Slicer-4.10.1-linux-amd64/Slicer # (https://download.slicer.org/)
-greedy=$ROOT/bin/greedy # (https://sites.google.com/view/greedyreg/)
-imagemath=$ROOT/bin/ImageMath # (https://github.com/NIRALUser/niral_utilities/tree/master/ImageMath)
-holedetection=$ROOT/bin/LOGB-Tools/HoleDetection # (https://www.insight-journal.org/browse/publication/43)
+c3d= # (https://sourceforge.net/p/c3d/git/ci/master/tree/)
+slicer= # (https://download.slicer.org/)
+greedy= # (https://sites.google.com/view/greedyreg/)
+imagemath= # (https://github.com/NIRALUser/niral_utilities/tree/master/ImageMath)
+holedetection= # (https://www.insight-journal.org/browse/publication/43)
 
 
 # Synthetic-Atrophy tools (you will have to manually add the paths for the executables once you compile them all)

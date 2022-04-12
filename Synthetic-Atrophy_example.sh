@@ -2,7 +2,13 @@
 
 set -x
 
+
 WDIR= # this is git repository directory
+
+ROOT= # this is where you cloned the git repository into
+WDIR=$ROOT/Code/Synthetic-Atrophy-For-Longtidunal-Cortical-Surface-Analyses
+mkdir -p $WDIR
+
 
 # External tools you will need to run this example:
 c3d= # (https://sourceforge.net/p/c3d/git/ci/master/tree/)
@@ -12,23 +18,23 @@ imagemath= # (https://github.com/NIRALUser/niral_utilities/tree/master/ImageMath
 holedetection= # (https://www.insight-journal.org/browse/publication/43)
 
 
-# Synthetic-Atrophy tools (you will have to manually add the paths for the executables once you compile them all)
-addFloatArray=$ROOT/bin/VTK-Tools/parcellateSingleSurface
-distanceBetweenSurfaces=$ROOT/Code/Synthetic-Atrophy-dev/Distance-Between-Surfaces-build/distanceBetweenSurfaces
-fillholes=$ROOT/bin/LOGB-Tools/FillHoles
-getBlurMask=$ROOT/Code/Synthetic-Atrophy-dev/Get-Blur-Mask-build/getBlurMask
-getTrimRegion=$ROOT/Code/Synthetic-Atrophy-dev/Get-Trim-Region-build/getTrimRegion
-maskField=$ROOT/Code/Synthetic-Atrophy-dev/Mask-Field-build/maskField
-padImage=$ROOT/Code/Synthetic-Atrophy-dev/Pad-Image-build/padImage
-padVectorImage=$ROOT/Code/Synthetic-Atrophy-dev/Pad-Vector-Image-build/padVectorImage
-parcellateAtrophyRegion=$ROOT/Code/Synthetic-Atrophy-dev/Parcellate-Atrophy-Region-build/parcellateAtrophyRegion
-performErosion=$ROOT/Code/Synthetic-Atrophy-dev/Perform-Erosion-build/performErosion
-readMeshArray=$ROOT/bin/VTK-Tools/readMeshArray
-trimFloatImage=$ROOT/Code/Synthetic-Atrophy-dev/Trim-Float-Image-build/trimFloatImage
-trimImage=$ROOT/Code/Synthetic-Atrophy-dev/Trim-Image-build/trimImage
-warpSurfaces=$ROOT/Code/Synthetic-Atrophy-dev/Warp-Surfaces-build/warpSurfs
-VTK2VTP=$ROOT/bin/Switch-File-Types/VTK2VTP
-VTP2VTK=$ROOT/bin/Switch-File-Types/VTP2VTK
+# Synthetic-Atrophy tools (you will have to manually add the paths in place of <$DIR> for the executables once you compile them all)
+distanceBetweenSurfaces=<$DIR>/distanceBetweenSurfaces
+fillholes=<$DIR>/FillHoles
+getBlurMask=<$DIR>/getBlurMask
+getTrimRegion=<$DIR>/getTrimRegion
+maskField=<$DIR>/maskField
+padImage=<$DIR>/padImage
+padVectorImage=<$DIR>/padVectorImage
+parcellateAtrophyRegion=<$DIR>/parcellateAtrophyRegion
+performErosion=<$DIR>d/performErosion
+readMeshArray=<$DIR>/readMeshArray
+trimFloatImage=<$DIR>/trimFloatImage
+trimImage=<$DIR>/trimImage
+warpSurfaces=<$DIR>/warpSurfs
+VTK2VTP=<$DIR>/VTK2VTP
+VTP2VTK=<$DIR>/VTP2VTK
+
 
 
 

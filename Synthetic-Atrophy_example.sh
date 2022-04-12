@@ -141,7 +141,7 @@ function main {
     ######################################    
 
     # Set up directories
-    DATA_DIR=$WDIR/Data
+    DATA_DIR=$WDIR/Example-Data
     INPUT_DIR=$DATA_DIR/Input
     ROI_DIR=$DATA_DIR/ROI
     MASK_DIR=$DATA_DIR/HighRes-Mask

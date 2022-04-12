@@ -2,11 +2,13 @@
 
 set -x
 
+# NOTE:  you must also have vtk (version 7-11 or later) and itk (4-13-3 or later) downloaded and compiled. you can find these here:
+# VTK:  https://vtk.org/download/
+# ITK:  https://itk.org/download/
 
-WDIR= # this is git repository directory
 
-ROOT= # this is where you cloned the git repository into
-WDIR=$ROOT/Code/Synthetic-Atrophy-For-Longtidunal-Cortical-Surface-Analyses
+ROOT= # this is the directory where you cloned the git repository into
+WDIR=$ROOT/Synthetic-Atrophy-For-Longtidunal-Cortical-Surface-Analyses
 mkdir -p $WDIR
 
 

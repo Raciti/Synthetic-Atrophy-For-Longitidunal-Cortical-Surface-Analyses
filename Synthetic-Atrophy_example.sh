@@ -4,7 +4,7 @@ set -x
 
 # NOTE:  you must also have vtk (version 7-11 or later) and itk (4-13-3 or later) downloaded and compiled. you can find these here:
 # VTK:  https://vtk.org/download/
-# ITK:  https://itk.org/download/
+# ITK:  https://docs.itk.org/en/latest/download.html
 
 
 ROOT= # this is the directory where you cloned the git repository into
